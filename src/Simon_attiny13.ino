@@ -31,7 +31,7 @@ const uint8_t buttons[4] = {
   0b00001010, 0b00000110, 0b00000011, 0b00010010
 };
 const uint8_t tones[4] = {
-  239, 179, 143, 119
+  230, 179, 143, 119
 };
 uint8_t lastKey;
 uint8_t lvl = 0;
@@ -86,11 +86,23 @@ void levelUp() {
 }
 
 uint8_t simple_random4() {
+#if !defined(SIMON_RANDOM_LFSR)
   // ctx = ctx * 1103515245 + 12345; // too big for ATtiny13
   ctx = 2053 * ctx + 13849;
   uint8_t temp = ctx ^ (ctx >> 8); // XOR two bytes
   temp ^= (temp >> 4); // XOR two nibbles
   return (temp ^ (temp >> 2)) & 0b00000011; // XOR two pairs of bits and return remainder after division by 4
+#elif defined(SIMON_RANDOM_LFSR)
+  // use Linear-feedback shift register instead of Linear congruential generator
+  for (uint8_t i = 0; i < 2; i++) { // we need two random bits
+    uint8_t lsb = ctx & 1; // Get LSB (i.e., the output bit)
+    ctx >>= 1; // Shift register
+    if (lsb || !ctx) { // output bit is 1 or ctx = 0
+        ctx ^= 0xB400; // apply toggle mask
+    }
+  }
+  return ctx & 0b00000011; // remainder after division by 4
+#endif
 }
 
 ISR(WDT_vect) {
@@ -130,9 +142,11 @@ int main(void) {
       eeprom_write_byte((uint8_t*) 0, 255); // reset best score
       maxLvl = 0;
       break;
+#if defined(SIMON_INFINITE_LOOP)
     case 0b00001101: // green button is pressed during reset
       lvl = 255; // play random tones in an infinite loop
       break;
+#endif
     case 0b00011001: // orange button is pressed during reset
       lvl = maxLvl; // start from max level and load seed from eeprom (no break here)
     case 0b00011100: // yellow button is pressed during reset
@@ -163,7 +177,7 @@ int main(void) {
                   _delay_loop_2(10000);
                   play(correct, 20000);
                 }
-                _delay_loop_2(65536);
+                _delay_loop_2(0);
                 gameOver();
               }
               time = 0;
@@ -178,7 +192,7 @@ int main(void) {
         }
       }
     }
-    _delay_loop_2(65536);
+    _delay_loop_2(0);
     if (lvl < 254) {
       lvl++;
       levelUp(); // animation for completed level
